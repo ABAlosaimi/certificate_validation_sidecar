@@ -11,6 +11,7 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.PKIXCertPathValidatorResult;
 import java.security.cert.PKIXParameters;
 import java.security.cert.X509Certificate;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import javax.net.ssl.KeyManager;
@@ -40,47 +41,36 @@ public class CertValidationService {
         this.sanAllowList = sanAllowList;
     }
 
-    // should be refactored to retrun the end result not the path result cuz we are doing 4 diff checks on the certs
-    public PKIXCertPathValidatorResult validateCertificate(X509Certificate[] chain) throws NoSuchAlgorithmException, CertPathValidatorException, InvalidAlgorithmParameterException, InvalidCertificateException, CertificateException {
+    
+    public void validateCertificate(X509Certificate[] chain) throws CertificateException, CertPathValidatorException, InvalidAlgorithmParameterException {
+        
+        X509Certificate leafCert = chain[0];
         
         // Self signing validation
-        X509Certificate leafCert = chain[0];
-
         if (leafCert.getSubjectX500Principal().equals(leafCert.getIssuerX500Principal())) {
             throw new InvalidCertificateException("Invalid Certificate: SELF_SIGNED_CERTIFICATE");
         }
 
         // SANs validation
         Collection<List<?>> sans = leafCert.getSubjectAlternativeNames();
-        if (sans != null) {
-            for (List<?> entry : sans) { // 2 = DNS name, 7 = IP address
-                Integer type = (Integer) entry.get(0); 
-                String  value = (String) entry.get(1);
+        boolean anyMatch = sans.stream()
+                               .filter(e -> (Integer)e.get(0) == 2 || (Integer)e.get(0) == 7)                                                                                                                                        
+                               .map(e -> (String)e.get(1))                                                                                                                                                                           
+                               .anyMatch(sanAllowList::contains);
 
-                if (type.intValue() == 2) {
-                    if (!value.equals(sanAllowList.get(0))) {
-                        throw new CertificateException("The certificate domain should not talk to this app");
-                    }
-                }
-
-                if (type.intValue() == 7) {
-                    if (!value.equals(sanAllowList.get(1))) {
-                        throw new CertificateException("The certificate IP should not talk to this app");
-                    }
-                }
-            }   
-        } else {
-            throw new CertificateException("The cert do not have SAN");
-        }
-
+        if (!anyMatch) throw new CertificateException("Invalid Certificate: INVALID_SAN");   
         
         // EKU and KU validation (we use here the OID to validate if the key is can be used for client validation which technically named id-kp-clientAuth)
         boolean[] ku = leafCert.getKeyUsage();
 
+        if (ku == null) {
+            throw new InvalidCertificateException("Invalid Certificate: NO_KEY_USAGE");
+        }
+
         if (ku != null && !ku[0]) {
             throw new InvalidCertificateException("Invalid Certificate: KEY_USAGE_NO_DIGITAL_SIGNATURE");
         }
-        
+
         List<String> eku = leafCert.getExtendedKeyUsage();
 
         boolean clientAuth = eku != null && eku.contains("1.3.6.1.5.5.7.3.2"); // id-kp-clientAuth 
@@ -93,11 +83,8 @@ public class CertValidationService {
 
         // Cert path validation
         CertPath certPath = cf.generateCertPath(List.of(chain));
-        PKIXCertPathValidatorResult result = (PKIXCertPathValidatorResult) validator.validate(certPath, pkixParameters);
-
-        return result;
+        validator.validate(certPath, pkixParameters);
     }
-
 
     public void extractLeafCertificate() throws Exception {
         ctx.init(keyManagers, new TrustManager[] {
@@ -105,31 +92,29 @@ public class CertValidationService {
                                  @Override
                                  public void checkClientTrusted(X509Certificate[] chain, String authType, SSLEngine engine) throws CertificateException {
                                    try{
-                                        validateCertificate(chain); // should throws CertificateException to abort handshake if one of the conditions aren't met
-                                    } catch (Exception e) {
-                                        throw new CertificateException("certificate not valid for this application");    
-                                    }     
+                                        validateCertificate(chain); 
+                                        // should throws CertificateException to abort handshake if one of the conditions aren't met
+                                      } catch (CertificateException e) { 
+                                        throw new CertificateException("Invalid certificate:", e.getCause()); 
+                                      } catch (CertPathValidatorException e) {
+                                        throw new CertificateException("Invalid certificate:", e.getCause()); 
+                                      } catch (InvalidAlgorithmParameterException e) {
+                                        throw new CertificateException("Invalid certificate:", e.getCause()); 
+                                      }      
                                  }
 
-                                // update these later either to throw or delegate to the same validation method
                                  @Override
                                  public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {}
-
                                  @Override
-                                 public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {}
-
+                                 public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {throw new CertificateException("This TrustManager only supports SSLEngine-based validation");}
                                  @Override
-                                 public X509Certificate[] getAcceptedIssuers() {return null;}
-
+                                 public X509Certificate[] getAcceptedIssuers() {return new X509Certificate[0];}
                                  @Override
-                                 public void checkClientTrusted(X509Certificate[] chain, String authType, Socket socket) throws CertificateException {}
-
+                                 public void checkClientTrusted(X509Certificate[] chain, String authType, Socket socket) throws CertificateException {throw new CertificateException("This TrustManager only supports SSLEngine-based validation"); }
                                  @Override
-                                 public void checkServerTrusted(X509Certificate[] chain, String authType, Socket socket) throws CertificateException {}
-
+                                 public void checkServerTrusted(X509Certificate[] chain, String authType, Socket socket) throws CertificateException {throw new CertificateException("This TrustManager only supports SSLEngine-based validation"); }
                                  @Override
-                                 public void checkServerTrusted(X509Certificate[] chain, String authType, SSLEngine engine) throws CertificateException {}
-        
+                                 public void checkServerTrusted(X509Certificate[] chain, String authType, SSLEngine engine) throws CertificateException {throw new CertificateException("This TrustManager only supports SSLEngine-based validation");}
                 }
         }, null);
 
