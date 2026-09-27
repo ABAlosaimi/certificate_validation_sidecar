@@ -2,16 +2,12 @@ package github.certvalidator.certvalidator.Services;
 
 import java.net.Socket;
 import java.security.InvalidAlgorithmParameterException;
-import java.security.NoSuchAlgorithmException;
-import java.security.cert.CertPath;
 import java.security.cert.CertPathValidator;
 import java.security.cert.CertPathValidatorException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
-import java.security.cert.PKIXCertPathValidatorResult;
 import java.security.cert.PKIXParameters;
 import java.security.cert.X509Certificate;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import javax.net.ssl.KeyManager;
@@ -25,23 +21,16 @@ import github.certvalidator.certvalidator.Exceptions.InvalidCertificateException
 @Service 
 public class CertValidationService {
     
-    private PKIXParameters pkixParameters;
-    private CertPathValidator validator;
     private SSLContext ctx;
     private KeyManager[] keyManagers;
-    private CertificateFactory cf;
     private List<String> sanAllowList;
 
     public  CertValidationService(PKIXParameters pkixParameters, CertPathValidator validator, SSLContext ctx, KeyManager[] keyManagers, CertificateFactory cf, List<String> sanAllowList) {
-        this.pkixParameters = pkixParameters;
-        this.validator = validator;
         this.ctx = ctx;
         this.keyManagers = keyManagers;
-        this.cf = cf;
         this.sanAllowList = sanAllowList;
     }
 
-    
     public void validateCertificate(X509Certificate[] chain) throws CertificateException, CertPathValidatorException, InvalidAlgorithmParameterException {
         
         X509Certificate leafCert = chain[0];
@@ -81,9 +70,6 @@ public class CertValidationService {
         // Temporal validation
         leafCert.checkValidity();
 
-        // Cert path validation
-        CertPath certPath = cf.generateCertPath(List.of(chain));
-        validator.validate(certPath, pkixParameters);
     }
 
     public void extractLeafCertificate() throws Exception {
