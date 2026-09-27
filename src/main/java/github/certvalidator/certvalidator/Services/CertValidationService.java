@@ -1,12 +1,7 @@
 package github.certvalidator.certvalidator.Services;
 
 import java.net.Socket;
-import java.security.InvalidAlgorithmParameterException;
-import java.security.cert.CertPathValidator;
-import java.security.cert.CertPathValidatorException;
 import java.security.cert.CertificateException;
-import java.security.cert.CertificateFactory;
-import java.security.cert.PKIXParameters;
 import java.security.cert.X509Certificate;
 import java.util.Collection;
 import java.util.List;
@@ -25,13 +20,13 @@ public class CertValidationService {
     private KeyManager[] keyManagers;
     private List<String> sanAllowList;
 
-    public  CertValidationService(PKIXParameters pkixParameters, CertPathValidator validator, SSLContext ctx, KeyManager[] keyManagers, CertificateFactory cf, List<String> sanAllowList) {
+    public CertValidationService(SSLContext ctx, KeyManager[] keyManagers, List<String> sanAllowList) {
         this.ctx = ctx;
         this.keyManagers = keyManagers;
         this.sanAllowList = sanAllowList;
     }
 
-    public void validateCertificate(X509Certificate[] chain) throws CertificateException, CertPathValidatorException, InvalidAlgorithmParameterException {
+    public void validateCertificate(X509Certificate[] chain) throws CertificateException {
         
         X509Certificate leafCert = chain[0];
         
@@ -42,12 +37,16 @@ public class CertValidationService {
 
         // SANs validation
         Collection<List<?>> sans = leafCert.getSubjectAlternativeNames();
+        if (sans == null) {
+            throw new CertificateException("Invalid Certificate: NO_SAN");
+        }
         boolean anyMatch = sans.stream()
-                               .filter(e -> (Integer)e.get(0) == 2 || (Integer)e.get(0) == 7)                                                                                                                                        
-                               .map(e -> (String)e.get(1))                                                                                                                                                                           
+                               .filter(e -> (Integer) e.get(0) == 2 || (Integer) e.get(0) == 7)
+                               .map(e -> (String) e.get(1))
                                .anyMatch(sanAllowList::contains);
-
-        if (!anyMatch) throw new CertificateException("Invalid Certificate: INVALID_SAN");   
+        if (!anyMatch) {
+            throw new CertificateException("Invalid Certificate: INVALID_SAN");
+        }
         
         // EKU and KU validation (we use here the OID to validate if the key is can be used for client validation which technically named id-kp-clientAuth)
         boolean[] ku = leafCert.getKeyUsage();
@@ -55,8 +54,7 @@ public class CertValidationService {
         if (ku == null) {
             throw new InvalidCertificateException("Invalid Certificate: NO_KEY_USAGE");
         }
-
-        if (ku != null && !ku[0]) {
+        if (!ku[0]) {
             throw new InvalidCertificateException("Invalid Certificate: KEY_USAGE_NO_DIGITAL_SIGNATURE");
         }
 
@@ -77,16 +75,7 @@ public class CertValidationService {
                  new X509ExtendedTrustManager() {
                                  @Override
                                  public void checkClientTrusted(X509Certificate[] chain, String authType, SSLEngine engine) throws CertificateException {
-                                   try{
-                                        validateCertificate(chain); 
-                                        // should throws CertificateException to abort handshake if one of the conditions aren't met
-                                      } catch (CertificateException e) { 
-                                        throw new CertificateException("Invalid certificate:", e.getCause()); 
-                                      } catch (CertPathValidatorException e) {
-                                        throw new CertificateException("Invalid certificate:", e.getCause()); 
-                                      } catch (InvalidAlgorithmParameterException e) {
-                                        throw new CertificateException("Invalid certificate:", e.getCause()); 
-                                      }      
+                                    validateCertificate(chain);
                                  }
 
                                  @Override
