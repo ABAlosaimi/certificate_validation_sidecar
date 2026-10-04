@@ -79,6 +79,7 @@ All configuration is supplied via environment variables.
 | `APP_KEYMANAGER_PW` | `keys.default.keymanager.password` | Password for the sidecar's identity keystore | `changeit` |
 | `APP_KEYMANAGER_KEYSTORE_FORMAT` | `keys.default.keymanager.container.format` | Keystore format (`PKCS12`, `JKS`) | `PKCS12` |
 | `APP_CERT_SAN_ALLOW` | `cert.san.allow` | Comma-separated DNS names or IP addresses the sidecar accepts as valid client SANs | _(required)_ |
+| `APP_CERT_REDIRECT_URL` | `cert.redirect.url` | URL to redirect the client to after successful certificate validation (`302 Found`) | _(required)_ |
 
 ### Identity keystore
 
@@ -108,6 +109,7 @@ server.ssl.enabled=true
 
 ```bash
 export APP_CERT_SAN_ALLOW=client.internal,10.0.0.1
+export APP_CERT_REDIRECT_URL=https://your-upstream.example.com/app
 export APP_KEYMANAGER_PW=changeit
 ./mvnw spring-boot:run
 ```
@@ -133,7 +135,7 @@ Starts a real Tomcat server on a random port with a dynamically generated in-mem
 
 | Test | Expected result | Rejected by |
 |------|----------------|-------------|
-| Valid client cert | 200 | — |
+| Valid client cert | 302 + `Location` header | — |
 | Wrong SAN | 403 | `CertValidationFilter` |
 | No KU extension | 403 | `CertValidationFilter` |
 | Wrong EKU (`serverAuth` only) | -1 (SSL alert) | Tomcat / Java 21 JSSE |

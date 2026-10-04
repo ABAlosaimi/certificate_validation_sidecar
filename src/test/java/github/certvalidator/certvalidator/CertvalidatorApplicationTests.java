@@ -9,9 +9,10 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.TestPropertySource;
 
 @SpringBootTest
-@TestPropertySource(properties = {                                                                                                                                                         
-  "cert.san.allow=client.internal",                                                                                                                                                        
-  "spring.main.allow-bean-definition-overriding=true"                                                                                                                                      
+@TestPropertySource(properties = {
+  "cert.san.allow=client.internal",
+  "cert.redirect.url=https://upstream.internal/app",
+  "spring.main.allow-bean-definition-overriding=true"
 })           
 class CertvalidatorApplicationTests {
 

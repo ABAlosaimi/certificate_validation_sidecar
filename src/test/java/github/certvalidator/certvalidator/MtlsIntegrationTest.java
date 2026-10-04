@@ -20,11 +20,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-
 import javax.net.ssl.*;
-import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigInteger;
+import java.net.URI;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,7 +35,6 @@ import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
@@ -54,7 +52,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = {
         "spring.main.allow-bean-definition-overriding=true",
-        "cert.san.allow=client.internal"
+        "cert.san.allow=client.internal",
+        "cert.redirect.url=https://upstream.internal/app"
     }
 )
 class MtlsIntegrationTest {
@@ -146,9 +145,15 @@ class MtlsIntegrationTest {
     // -------------------------------------------------------------------------
 
     @Test
-    void valid_client_cert_gets_200() throws Exception {
+    void valid_client_cert_gets_302_and_redirects() throws Exception {
         KeyPair kp = newKeyPair();
-        assertEquals(200, get("/api/hello", clientCtx(kp, validClientCert(kp))));
+        HttpsURLConnection conn = open("/api/hello", clientCtx(kp, validClientCert(kp)));
+        try {
+            assertEquals(302, conn.getResponseCode());
+            assertEquals("https://upstream.internal/app", conn.getHeaderField("Location"));
+        } finally {
+            conn.disconnect();
+        }
     }
 
     @Test
@@ -283,18 +288,25 @@ class MtlsIntegrationTest {
         return ctx;
     }
 
+    /** Opens a connection with redirects disabled; caller must disconnect. Returns null on SSL failure. */
+    private HttpsURLConnection open(String path, SSLContext sslContext) throws Exception {
+        URL url = new URI("https://localhost:" + port + path).toURL();
+        HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
+        conn.setSSLSocketFactory(sslContext.getSocketFactory());
+        conn.setHostnameVerifier((hostname, session) -> true);
+        conn.setInstanceFollowRedirects(false);
+        return conn;
+    }
+
     /** Make a GET request; returns HTTP status or -1 on SSL handshake failure. */
     private int get(String path, SSLContext sslContext) {
         HttpsURLConnection conn = null;
         try {
-            URL url = new URL("https://localhost:" + port + path);
-            conn = (HttpsURLConnection) url.openConnection();
-            conn.setSSLSocketFactory(sslContext.getSocketFactory());
-            conn.setHostnameVerifier((hostname, session) -> true);
+            conn = open(path, sslContext);
             return conn.getResponseCode();
         } catch (SSLHandshakeException e) {
             return -1;
-        } catch (IOException e) {
+        } catch (Exception e) {
             return -1;
         } finally {
             if (conn != null) conn.disconnect();

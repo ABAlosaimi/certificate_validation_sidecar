@@ -1,0 +1,19 @@
+# Test sources and resources — not needed at runtime
+src/test/
+
+# Build output (Docker copies from the build stage, not the host target/)
+target/
+
+# IDE and OS noise
+.idea/
+*.iml
+.DS_Store
+*.swp
+
+# Git metadata
+.git/
+.gitignore
+
+# Local environment files that must not leak into the image
+.env
+*.env
